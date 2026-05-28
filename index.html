@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>УКП Республики Бурятия — интерактивная карта</title>
+    <title>УКП Бурятии — точная геокодированная карта</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Roboto, Arial, sans-serif; background: #eef3ea; height: 100vh; display: flex; flex-direction: column; }
@@ -23,11 +23,13 @@
         .red-badge { background: #dc3545; }
         #map { flex: 1; width: 100%; min-height: 0; }
         .footer { text-align: center; font-size: 11px; padding: 6px; background: #e2e9de; flex-shrink: 0; }
-        .share-note { background: #e7f3ff; border-radius: 20px; padding: 5px 12px; font-size: 12px; margin-left: 15px; cursor: pointer; }
+        .progress-panel { background: #e7f3ff; border-radius: 30px; padding: 6px 15px; font-size: 12px; margin-left: 15px; display: flex; align-items: center; gap: 10px; }
+        .progress-bar-container { width: 150px; background: #ccc; border-radius: 10px; height: 8px; overflow: hidden; }
+        .progress-bar-fill { width: 0%; height: 100%; background: #1e6f3f; transition: width 0.3s; }
         @media (max-width: 700px) {
             .controls { flex-direction: column; align-items: stretch; }
             .legend { margin-left: 0; justify-content: space-between; }
-            .share-note { margin-left: 0; text-align: center; }
+            .progress-panel { margin-left: 0; justify-content: space-between; }
         }
     </style>
     <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=514de444-9297-4c78-82b9-1ce983577654"></script>
@@ -35,13 +37,13 @@
 <body>
 <div class="header">
     <h1>🗺️ Учебно-консультационные пункты (УКП) — Республика Бурятия</h1>
-    <p>218 пунктов · клик по метке → адрес, руководитель, консультант, статус, маршрут</p>
+    <p>218 пунктов · координаты определяются автоматически по адресу · клик по метке → подробности + маршрут</p>
 </div>
 <div class="controls">
     <div class="filter-group">
         <label>🏞️ Район:</label>
-        <select id="districtSelect">
-            <option value="all">📌 Все районы (218 УКП)</option>
+        <select id="districtSelect" disabled>
+            <option value="all">Все районы (загрузка...)</option>
         </select>
     </div>
     <div class="info-panel" id="infoPanel"></div>
@@ -50,15 +52,17 @@
         <span><i class="color-badge yellow-badge"></i> Частично / нет консультанта</span>
         <span><i class="color-badge red-badge"></i> Не укомплектован</span>
     </div>
-    <div class="share-note" id="shareNoteBtn">🔗 Как поделиться картой (ссылка)</div>
+    <div class="progress-panel" id="progressPanel">
+        <span>📍 Загрузка координат:</span>
+        <div class="progress-bar-container"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <span id="progressText">0 из 218</span>
+    </div>
 </div>
 <div id="map"></div>
 <div class="footer">📍 Клик по метке → информация + 🚶 «Построить пеший маршрут до УКП» (откроется Яндекс.Карты)</div>
 
 <script>
-// ============================================================
-// ПОЛНЫЙ РЕЕСТР УКП (218 ЗАПИСЕЙ) – ВАШИ ДАННЫЕ ИЗ ФАЙЛА
-// ============================================================
+// ========== ПОЛНЫЙ РЕЕСТР УКП (218 ЗАПИСЕЙ) ==========
 const ukpData = [
 {"district":"г. Улан-Удэ","address":"ул. Радикальцева, 5а","head":"Перемитин Л.Л.","consultant":"Шкильнюк А.С.","completeness":"Полностью укомплектован"},
 {"district":"г. Улан-Удэ","address":"ул. Геологическая, 15","head":"Гончарова Н.Ю.","consultant":"Дамбиева П.Д.","completeness":"Полностью укомплектован"},
@@ -280,9 +284,33 @@ const ukpData = [
 {"district":"Иволгинский район","address":"с. Зун-Хужир, ул. Трактовая, 4","head":"Соктоев Б.Г.","consultant":"Бадмаева Д.Б.","completeness":"Полностью укомплектован"}
 ];
 
-// ============================================================
-// КООРДИНАТЫ ЦЕНТРОВ РАЙОНОВ И ИХ СТАТИСТИКА
-// ============================================================
+// ========== СТАТИСТИКА РАЙОНОВ ==========
+const districtInfo = {
+    "г. Улан-Удэ": { area:"365 км²", population:"437 000", settlements:"1", admin_center:"г. Улан-Удэ" },
+    "г. Северобайкальск": { area:"104 км²", population:"24 000", settlements:"1", admin_center:"г. Северобайкальск" },
+    "Баргузинский район": { area:"18533 км²", population:"22 000", settlements:"34", admin_center:"с. Баргузин" },
+    "Баунтовский эвенкийский район": { area:"58400 км²", population:"9 000", settlements:"13", admin_center:"с. Багдарин" },
+    "Бичурский район": { area:"4490 км²", population:"20 600", settlements:"36", admin_center:"с. Бичура" },
+    "Джидинский район": { area:"10700 км²", population:"28 000", settlements:"28", admin_center:"с. Петропавловка" },
+    "Еравнинский район": { area:"25400 км²", population:"12 000", settlements:"24", admin_center:"с. Сосново-Озёрское" },
+    "Заиграевский район": { area:"7700 км²", population:"45 000", settlements:"45", admin_center:"п. Заиграево" },
+    "Закаменский район": { area:"15300 км²", population:"28 000", settlements:"38", admin_center:"г. Закаменск" },
+    "Иволгинский район": { area:"2660 км²", population:"48 000", settlements:"28", admin_center:"с. Иволгинск" },
+    "Кабанский район": { area:"13500 км²", population:"57 000", settlements:"62", admin_center:"с. Кабанск" },
+    "Кижингинский район": { area:"6200 км²", population:"14 000", settlements:"29", admin_center:"с. Кижинга" },
+    "Курумканский район": { area:"12400 км²", population:"13 000", settlements:"24", admin_center:"с. Курумкан" },
+    "Кяхтинский район": { area:"8900 км²", population:"34 000", settlements:"44", admin_center:"г. Кяхта" },
+    "Муйский район": { area:"23600 км²", population:"11 000", settlements:"10", admin_center:"п. Таксимо" },
+    "Окинский район": { area:"26400 км²", population:"5 600", settlements:"14", admin_center:"с. Орлик" },
+    "Прибайкальский район": { area:"16300 км²", population:"28 000", settlements:"46", admin_center:"с. Турунтаево" },
+    "Северо-Байкальский район": { area:"54000 км²", population:"11 000", settlements:"18", admin_center:"п. Нижнеангарск" },
+    "Селенгинский район": { area:"8600 км²", population:"36 000", settlements:"30", admin_center:"г. Гусиноозёрск" },
+    "Тарбагатайский район": { area:"3300 км²", population:"26 000", settlements:"27", admin_center:"с. Тарбагатай" },
+    "Тункинский район": { area:"11700 км²", population:"20 000", settlements:"30", admin_center:"с. Кырен" },
+    "Хоринский район": { area:"18400 км²", population:"16 000", settlements:"33", admin_center:"с. Хоринск" }
+};
+
+// Координаты центров районов (для fallback, если геокодирование не сработает)
 const districtCenters = {
     "г. Улан-Удэ":[51.8348,107.6258], "г. Северобайкальск":[55.6358,109.325],
     "Баргузинский район":[53.6167,109.6333], "Баунтовский эвенкийский район":[54.4667,113.5667],
@@ -297,41 +325,10 @@ const districtCenters = {
     "Тункинский район":[51.6833,102.5333], "Хоринский район":[52.1667,109.7667]
 };
 
-const districtInfo = {
-    "г. Улан-Удэ":{area:"365 км²",population:"437 000",settlements:"1",admin_center:"г. Улан-Удэ"},
-    "г. Северобайкальск":{area:"104 км²",population:"24 000",settlements:"1",admin_center:"г. Северобайкальск"},
-    "Баргузинский район":{area:"18533 км²",population:"22 000",settlements:"34",admin_center:"с. Баргузин"},
-    "Баунтовский эвенкийский район":{area:"58400 км²",population:"9 000",settlements:"13",admin_center:"с. Багдарин"},
-    "Бичурский район":{area:"4490 км²",population:"20 600",settlements:"36",admin_center:"с. Бичура"},
-    "Джидинский район":{area:"10700 км²",population:"28 000",settlements:"28",admin_center:"с. Петропавловка"},
-    "Еравнинский район":{area:"25400 км²",population:"12 000",settlements:"24",admin_center:"с. Сосново-Озёрское"},
-    "Заиграевский район":{area:"7700 км²",population:"45 000",settlements:"45",admin_center:"п. Заиграево"},
-    "Закаменский район":{area:"15300 км²",population:"28 000",settlements:"38",admin_center:"г. Закаменск"},
-    "Иволгинский район":{area:"2660 км²",population:"48 000",settlements:"28",admin_center:"с. Иволгинск"},
-    "Кабанский район":{area:"13500 км²",population:"57 000",settlements:"62",admin_center:"с. Кабанск"},
-    "Кижингинский район":{area:"6200 км²",population:"14 000",settlements:"29",admin_center:"с. Кижинга"},
-    "Курумканский район":{area:"12400 км²",population:"13 000",settlements:"24",admin_center:"с. Курумкан"},
-    "Кяхтинский район":{area:"8900 км²",population:"34 000",settlements:"44",admin_center:"г. Кяхта"},
-    "Муйский район":{area:"23600 км²",population:"11 000",settlements:"10",admin_center:"п. Таксимо"},
-    "Окинский район":{area:"26400 км²",population:"5 600",settlements:"14",admin_center:"с. Орлик"},
-    "Прибайкальский район":{area:"16300 км²",population:"28 000",settlements:"46",admin_center:"с. Турунтаево"},
-    "Северо-Байкальский район":{area:"54000 км²",population:"11 000",settlements:"18",admin_center:"п. Нижнеангарск"},
-    "Селенгинский район":{area:"8600 км²",population:"36 000",settlements:"30",admin_center:"г. Гусиноозёрск"},
-    "Тарбагатайский район":{area:"3300 км²",population:"26 000",settlements:"27",admin_center:"с. Тарбагатай"},
-    "Тункинский район":{area:"11700 км²",population:"20 000",settlements:"30",admin_center:"с. Кырен"},
-    "Хоринский район":{area:"18400 км²",population:"16 000",settlements:"33",admin_center:"с. Хоринск"}
-};
-
-function getCoords(district, idx) {
-    let c = districtCenters[district];
-    if (!c) return [53.5,108.5];
-    let seed = idx * 0.1234567;
-    return [c[0] + (Math.sin(seed)*0.12)+(Math.random()-0.5)*0.08, c[1] + (Math.cos(seed*1.3)*0.18)+(Math.random()-0.5)*0.1];
-}
-
-const enriched = ukpData.map((item, idx) => ({ ...item, coords: getCoords(item.district, idx) }));
-
-let myMap, clusterer, allPlacemarks = [];
+// ========== ГЕОКОДИРОВАНИЕ И ОТРИСОВКА КАРТЫ ==========
+let map, clusterer, allPlacemarks = [];
+let geocodingProgress = 0;
+let totalToGeocode = ukpData.length;
 
 function getColor(completeness) {
     if (completeness.includes('Полностью')) return 'green';
@@ -363,70 +360,162 @@ function balloonContent(item) {
     `;
 }
 
-function initMap() {
-    myMap = new ymaps.Map('map', { center: [53.5, 108.5], zoom: 6, controls: ['zoomControl', 'fullscreenControl'] });
-    clusterer = new ymaps.Clusterer({ preset: 'islands#invertedVioletClusterIcons', groupByCoordinates: false, zoomMargin: 20 });
-    enriched.forEach(item => {
-        let color = getColor(item.completeness);
-        let placemark = new ymaps.Placemark(
-            item.coords,
-            { balloonContent: balloonContent(item), hintContent: item.address },
-            { preset: `islands#${color}DotIcon`, balloonMaxWidth: 360 }
-        );
-        placemark.properties.set('district', item.district);
-        allPlacemarks.push(placemark);
-    });
-    clusterer.add(allPlacemarks);
-    myMap.geoObjects.add(clusterer);
+function updateProgress(current) {
+    let percent = (current / totalToGeocode) * 100;
+    document.getElementById('progressFill').style.width = percent + '%';
+    document.getElementById('progressText').innerText = `${current} из ${totalToGeocode}`;
+    if (current === totalToGeocode) {
+        document.getElementById('progressPanel').style.background = '#d4edda';
+        setTimeout(() => {
+            document.getElementById('progressPanel').style.opacity = '0.5';
+        }, 2000);
+    }
+}
 
-    let districts = [...new Set(enriched.map(d => d.district))].sort();
+function addPlacemarkToMap(item) {
+    let color = getColor(item.completeness);
+    let placemark = new ymaps.Placemark(
+        item.coords,
+        { balloonContent: balloonContent(item), hintContent: item.address },
+        { preset: `islands#${color}DotIcon`, balloonMaxWidth: 360 }
+    );
+    placemark.properties.set('district', item.district);
+    allPlacemarks.push(placemark);
+    if (clusterer) {
+        clusterer.add(placemark);
+    }
+}
+
+function startGeocoding() {
+    // Загружаем из localStorage уже готовые координаты
+    let saved = localStorage.getItem('ukp_coords');
+    let coordsMap = saved ? JSON.parse(saved) : {};
+    
+    let itemsToGeocode = [];
+    let readyItems = [];
+    
+    for (let item of ukpData) {
+        let fullAddress = item.address + ', ' + item.district + ', Республика Бурятия, Россия';
+        if (coordsMap[fullAddress]) {
+            item.coords = coordsMap[fullAddress];
+            readyItems.push(item);
+        } else {
+            itemsToGeocode.push(item);
+        }
+    }
+    
+    // Сначала добавляем уже готовые
+    for (let item of readyItems) {
+        addPlacemarkToMap(item);
+    }
+    updateProgress(readyItems.length);
+    
+    if (itemsToGeocode.length === 0) {
+        finishMapping();
+        return;
+    }
+    
+    // Последовательно геокодируем остальные
+    let index = 0;
+    function processNext() {
+        if (index >= itemsToGeocode.length) {
+            finishMapping();
+            return;
+        }
+        let item = itemsToGeocode[index];
+        let fullAddress = item.address + ', ' + item.district + ', Республика Бурятия, Россия';
+        
+        ymaps.geocode(fullAddress, { results: 1 }).then(res => {
+            let first = res.geoObjects.get(0);
+            if (first) {
+                let coords = first.geometry.getCoordinates();
+                item.coords = coords;
+                coordsMap[fullAddress] = coords;
+                addPlacemarkToMap(item);
+            } else {
+                // fallback на центр района
+                let center = districtCenters[item.district];
+                if (center) {
+                    item.coords = [center[0] + (Math.random() - 0.5) * 0.05, center[1] + (Math.random() - 0.5) * 0.05];
+                } else {
+                    item.coords = [53.5, 108.5];
+                }
+                addPlacemarkToMap(item);
+                console.warn('Не найден адрес:', fullAddress);
+            }
+            let completedCount = readyItems.length + index + 1;
+            updateProgress(completedCount);
+            localStorage.setItem('ukp_coords', JSON.stringify(coordsMap));
+            index++;
+            setTimeout(processNext, 200); // задержка 200 мс
+        }).catch(err => {
+            console.error('Ошибка геокодирования', fullAddress, err);
+            let center = districtCenters[item.district];
+            if (center) {
+                item.coords = [center[0] + (Math.random() - 0.5) * 0.05, center[1] + (Math.random() - 0.5) * 0.05];
+            } else {
+                item.coords = [53.5, 108.5];
+            }
+            addPlacemarkToMap(item);
+            let completedCount = readyItems.length + index + 1;
+            updateProgress(completedCount);
+            index++;
+            setTimeout(processNext, 200);
+        });
+    }
+    
+    processNext();
+}
+
+function finishMapping() {
+    // Включаем фильтр по районам
+    let districts = [...new Set(allPlacemarks.map(pm => pm.properties.get('district')))].sort();
     let select = document.getElementById('districtSelect');
+    select.innerHTML = '<option value="all">📌 Все районы (' + allPlacemarks.length + ' УКП)</option>';
     districts.forEach(d => {
         let opt = document.createElement('option');
         opt.value = d;
         opt.textContent = d;
         select.appendChild(opt);
     });
-    select.addEventListener('change', (e) => {
-        let val = e.target.value;
+    select.disabled = false;
+    
+    function filterByDistrict(district) {
         clusterer.removeAll();
-        let visible = allPlacemarks.filter(pm => val === 'all' || pm.properties.get('district') === val);
+        let visible = allPlacemarks.filter(pm => district === 'all' || pm.properties.get('district') === district);
         clusterer.add(visible);
         let infoDiv = document.getElementById('infoPanel');
-        if (val === 'all') {
+        if (district === 'all') {
             infoDiv.style.display = 'none';
-            myMap.setCenter([53.5, 108.5], 6);
+            map.setCenter([53.5, 108.5], 6);
         } else {
-            let info = districtInfo[val];
+            let info = districtInfo[district];
             if (info) {
-                let cnt = allPlacemarks.filter(pm => pm.properties.get('district') === val).length;
-                infoDiv.innerHTML = `<strong>📊 ${val}</strong><br>📐 Площадь: ${info.area}<br>👥 Население: ${info.population}<br>🏡 Насел. пунктов: ${info.settlements}<br>🏫 УКП: ${cnt}<br>🏛️ Адм. центр: ${info.admin_center}`;
+                let cnt = visible.length;
+                infoDiv.innerHTML = `<strong>📊 ${district}</strong><br>📐 Площадь: ${info.area}<br>👥 Население: ${info.population}<br>🏡 Насел. пунктов: ${info.settlements}<br>🏫 УКП: ${cnt}<br>🏛️ Адм. центр: ${info.admin_center}`;
                 infoDiv.style.display = 'block';
             } else {
                 infoDiv.style.display = 'none';
             }
-            let center = districtCenters[val];
-            if (center) myMap.setCenter(center, 9);
+            let center = districtCenters[district];
+            if (center) map.setCenter(center, 9);
         }
-    });
+    }
+    
+    select.addEventListener('change', (e) => filterByDistrict(e.target.value));
+    filterByDistrict('all');
 }
 
-ymaps.ready(initMap);
+function init() {
+    map = new ymaps.Map('map', { center: [53.5, 108.5], zoom: 6, controls: ['zoomControl', 'fullscreenControl'] });
+    clusterer = new ymaps.Clusterer({ preset: 'islands#invertedVioletClusterIcons', groupByCoordinates: false, zoomMargin: 20 });
+    map.geoObjects.add(clusterer);
+    
+    // Начинаем геокодирование после загрузки карты
+    startGeocoding();
+}
 
-// Инструкция по публикации (как получить работающую ссылку)
-document.getElementById('shareNoteBtn').onclick = (e) => {
-    e.preventDefault();
-    alert(
-        "🔗 КАК ПОЛУЧИТЬ РАБОЧУЮ ИНТЕРНЕТ-ССЫЛКУ НА КАРТУ\n\n" +
-        "1. Сохраните этот файл (ukp_buryatia.html) на компьютер.\n" +
-        "2. Зайдите на сайт https://app.netlify.com/drop (бесплатно, без регистрации).\n" +
-        "3. Перетащите файл в окно браузера.\n" +
-        "4. Через пару секунд сайт выдаст ссылку вида https://...netlify.app/ukp_buryatia.html\n" +
-        "5. Эту ссылку можно отправлять кому угодно – карта откроется с метками, маршрутами и всеми данными.\n\n" +
-        "Альтернативы: GitHub Pages, любой хостинг для статики.\n" +
-        "Если перешлёте сам .html файл через Telegram/почту – человек тоже сможет открыть карту локально."
-    );
-};
+ymaps.ready(init);
 </script>
 </body>
 </html>
